@@ -28,6 +28,7 @@ BATCH_SIZE = 64
 EPOCHS = 50
 WEIGHT_DECAY = 1e-6
 
+
 # define the train and val splits
 TRAIN_SPLIT = 0.75
 VAL_SPLIT = 1 - TRAIN_SPLIT
