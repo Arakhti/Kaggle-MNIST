@@ -14,12 +14,19 @@ from mnistImageDataset import MnistImageDataset
 from mnistTestImageDataset import MnistTestImageDataset
 from PIL import Image
 from matplotlib import pyplot as plt
+import sys
 
+
+# Launch arguments
+loadModel = False
+if len(sys.argv) > 1 and sys.argv[1] == "load":
+    loadModel = True
 
 # define training hyperparameters
-INIT_LR = 1e-3
+INIT_LR = 5e-4
 BATCH_SIZE = 64
-EPOCHS = 20
+EPOCHS = 50
+WEIGHT_DECAY = 1e-6
 
 # define the train and val splits
 TRAIN_SPLIT = 0.75
@@ -58,7 +65,8 @@ def train_loop(dataloader, model, loss_fn, optimizer):
 
     totalTrainLoss /= num_batches
     trainCorrect /= size
-    print(f"Train Error: \n Accuracy: {(100*trainCorrect):>0.1f}%, Avg loss: {totalTrainLoss:>8f} \n")
+    print(f"Train Error: \n Accuracy: {(100*trainCorrect):>0.3f}%, Avg loss: {totalTrainLoss:>8f} \n")
+    return 100*trainCorrect
 
 
 def validation_loop(dataloader, model, loss_fn):
@@ -85,7 +93,8 @@ def validation_loop(dataloader, model, loss_fn):
 
         totalValLoss /= num_batches
         valCorrect /= size
-        print(f"Validation Error: \n Accuracy: {(100*valCorrect):>0.1f}%, Avg loss: {totalValLoss:>8f} \n")
+        print(f"Validation Error: \n Accuracy: {(100*valCorrect):>0.3f}%, Avg loss: {totalValLoss:>8f} \n")
+        return 100*valCorrect
 
 
 
@@ -142,15 +151,18 @@ dataset_train = MnistImageDataset(
     )
 
 # calculate the train/validation split
-print("[INFO] generating the train/validation split...")
-numTrainSamples = int(len(dataset_train) * TRAIN_SPLIT)
-numValSamples = int(len(dataset_train) * VAL_SPLIT)
-(trainData, valData) = random_split(dataset_train,
-    [numTrainSamples, numValSamples],
-    generator=torch.Generator().manual_seed(42))
+def trainValidationSplit(dataset_train) : 
 
-dataloader_train = DataLoader(trainData, batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(valData, batch_size=BATCH_SIZE, shuffle=False)
+    print("[INFO] generating the train/validation split...")
+    numTrainSamples = int(len(dataset_train) * TRAIN_SPLIT)
+    numValSamples = int(len(dataset_train) * VAL_SPLIT)
+    (trainData, valData) = random_split(dataset_train,
+        [numTrainSamples, numValSamples])
+
+    return DataLoader(trainData, batch_size=BATCH_SIZE, shuffle=True), DataLoader(valData, batch_size=BATCH_SIZE, shuffle=False)
+
+
+dataloader_train, dataloader_val = trainValidationSplit(dataset_train)
 
 # Import testing data
 df_test = pd.read_csv(f"{localpath}/test.csv")
@@ -160,26 +172,40 @@ print("test dataset length")
 print(len(testDataset))
 dataloader_test = DataLoader(testDataset, batch_size=BATCH_SIZE)
 
-
-model = ConvNeuralNetwork(numChannels=1, classes=10).to(device)
+# Loading model or creating it
+my_model = Path(f"{localpath}/modelMnist.pth")
+if my_model.is_file() and loadModel:
+    print("Loading model from modelMnist.pth")
+    model = torch.load('modelMnist.pth')
+else :
+    print("Creating Model")
+    model = ConvNeuralNetwork(numChannels=1, classes=10).to(device)
 
 # Initialize the loss function
 loss_fn = nn.NLLLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=INIT_LR)
+optimizer = torch.optim.Adam(model.parameters(), lr=INIT_LR, weight_decay=1e-5)
 
 
 start = time.time()
 
+bestValAccuracy = 0.0
 for t in range(EPOCHS):
     print(f"Epoch {t+1}\n-------------------------------")
-    train_loop(dataloader_train, model, loss_fn, optimizer)
-    validation_loop(dataloader_val, model, loss_fn)
+    trainAccuracy = train_loop(dataloader_train, model, loss_fn, optimizer)
+    valAccuracy = validation_loop(dataloader_val, model, loss_fn)
+    if (valAccuracy > bestValAccuracy) :
+        #Saving model
+        print("Saving model...")
+        torch.save(model, 'modelMnist.pth')
+        bestValAccuracy = valAccuracy
+    
 print("Done!")
 end = time.time()
 print(f"Executed in {end - start} seconds.")
+my_model = Path(f"{localpath}/modelMnist.pth")
+if my_model.is_file():
+    print("Loading best model for testing set")
+    model = torch.load('modelMnist.pth')
 test_loop(dataloader_test, model)
 
 
-
-
-# torch.save(model, 'model.pth')
